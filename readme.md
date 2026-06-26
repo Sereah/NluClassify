@@ -8,12 +8,13 @@
 
 ```
 nlu_classify/
-├── train_nlu.py            # 训练脚本
-├── predict_nlu.py          # HuggingFace 格式推理
-├── add_pooler_to_gguf.py   # 追加 pooler 层到 GGUF
-├── test_gguf.py            # GGUF 格式推理测试
-├── readme.md               # 本文档
-├── training_data/          # CSV 训练数据（每个文件一个意图分类）
+├── train_nlu.py                               # 训练脚本
+├── predict_nlu.py                             # HuggingFace 格式推理
+├── add_pooler_to_gguf.py                      # 追加 pooler 层到 GGUF
+├── test_gguf.py                               # GGUF 格式推理测试
+├── patch_llama_cpp.py                         # 修复 llama.cpp 分词器识别问题
+├── readme.md                                  # 本文档
+├── training_data/                             # CSV 训练数据（每个文件一个意图分类）
 │   ├── 感知车控.csv
 │   ├── 直接车控.csv
 │   ├── 车书.csv
@@ -21,10 +22,11 @@ nlu_classify/
 │   ├── 出行.csv
 │   ├── 闲聊.csv
 │   └── 搜索.csv
-├── nlu_model/              # 训练后自动生成（HuggingFace 格式）
-├── llama.cpp/              # 需手动克隆（见步骤三）
-├── nlu_model.gguf          # 转换后生成
-└── nlu_model_pooler.gguf   # 追加 pooler 后生成，用于最终推理
+├── bert-base-chinese/                         # 需手动克隆（见步骤零）
+├── nlu_model/                                 # 训练后自动生成（HuggingFace 格式）
+├── llama.cpp/                                 # 需手动克隆（见步骤三）
+├── nlu_model-bert-base-chinese-F32.gguf       # 转换后生成
+└── nlu_model-bert-base-chinese-F32-pooler.gguf  # 追加 pooler 后生成，用于最终推理
 ```
 
 ---
@@ -128,6 +130,8 @@ llama.cpp 的转换脚本不认识 bert-base-chinese 的分词器，需要先修
 conda run -n <ENV> python patch_llama_cpp.py
 ```
 
+脚本会自动从本地 `bert-base-chinese/` 加载 tokenizer 并动态计算哈希值，
+再写入 `llama.cpp/conversion/base.py`。无论使用哪个版本的 llama.cpp 都能正确适配。
 成功后会提示 `✅ patch 完成`，同时自动备份原文件为 `base.py.bak`。
 
 **4.2 执行转换**
