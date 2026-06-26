@@ -30,7 +30,7 @@ import numpy as np
 sys.path.insert(0, "./llama.cpp/gguf-py")
 
 from llama_cpp import Llama
-from gguf import GGUFReader
+from gguf import GGUFReader  # 只用于读 KV 元数据，不读量化张量
 
 # ── 命令行参数 ────────────────────────────────
 parser = argparse.ArgumentParser(description="BERT GGUF 意图分类推理")
@@ -48,8 +48,7 @@ TOP_K     = 3            # 显示概率最高的前 K 个意图
 # ── 读取 GGUF 里的元数据 ──────────────────────
 print(f"读取 GGUF 文件：{GGUF_PATH}")
 r = GGUFReader(GGUF_PATH)
-fields  = r.fields
-weights = {t.name: np.array(t.data) for t in r.tensors}
+fields = r.fields
 
 # 从 GGUF 的 KV 元数据里读取标签列表
 # convert_hf_to_gguf.py 会把模型 config.json 里的 id2label 写进 GGUF
@@ -69,11 +68,15 @@ pooler_b = np.array(
     fields["bert.classifier.pooler_bias"].contents(), dtype=np.float32
 )
 
-# 从张量里读取分类头权重
-# cls.output.weight 形状：[num_labels, 768]
-# cls.output.bias   形状：[num_labels]
-cls_w = weights["cls.output.weight"]   # [num_labels, 768]
-cls_b = weights["cls.output.bias"]     # [num_labels]
+# 从 KV 元数据里读取分类头权重（F32，与量化精度无关）
+# 注意：不从 GGUF 张量读取，因为量化后张量字节布局不是纯 float32，
+# 直接 reshape 会得到错误的形状和数值，对所有量化精度都不安全。
+cls_w = np.array(
+    fields["bert.classifier.output_weight"].contents(), dtype=np.float32
+).reshape(num_labels, 768)
+cls_b = np.array(
+    fields["bert.classifier.output_bias"].contents(), dtype=np.float32
+)
 print(f"分类头权重形状：{cls_w.shape}（{num_labels} 个类 × 768 维）")
 
 # ── 加载 llama-cpp-python 推理引擎 ────────────

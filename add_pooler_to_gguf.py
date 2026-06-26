@@ -85,6 +85,19 @@ pooler_b = hf["bert.pooler.dense.bias"].float().numpy().flatten().tolist()
 print(f"pooler.weight: {len(pooler_w)} 个浮点数（应为 {768*768} = 768×768）")
 print(f"pooler.bias:   {len(pooler_b)} 个浮点数（应为 768）")
 
+# 提取分类头权重，转成 float32 列表
+# classifier.weight 形状是 [num_labels, 768]
+# classifier.bias   形状是 [num_labels]
+# 注意：这里从 safetensors（F32）读取，而不是从 GGUF 张量读取。
+# 原因：GGUF 张量会被量化（Q8_0/Q4_K_M），读回来的字节布局和 F32 不同，
+# 直接当 float32 用会导致维度错误。存成 KV 条目始终保持 F32，
+# 对所有量化精度（F32/F16/Q8_0/Q4_K_M）都能正确工作。
+cls_w = hf["classifier.weight"].float().numpy().flatten().tolist()
+cls_b = hf["classifier.bias"].float().numpy().flatten().tolist()
+num_labels = hf["classifier.bias"].shape[0]
+print(f"classifier.weight: {len(cls_w)} 个浮点数（{num_labels} 类 × 768 维）")
+print(f"classifier.bias:   {len(cls_b)} 个浮点数（{num_labels} 类）")
+
 print(f"\n读取原始 GGUF：{INPUT_GGUF}")
 reader = GGUFReader(INPUT_GGUF)
 
@@ -106,9 +119,11 @@ for field in reader.fields.values():
     sub_type = field.types[-1] if val_type == gguf.GGUFValueType.ARRAY else None
     writer.add_key_value(field.name, field.contents(), val_type, sub_type=sub_type)
 
-# ── 追加 pooler 权重作为 KV 元数据 ───────────
-# 选择用 KV 方式存储（而非新增张量），是因为 llama.cpp 推理时不会加载多余张量
-print("追加 pooler 权重到 KV 元数据...")
+# ── 追加 pooler 和分类头权重作为 KV 元数据 ────
+# 全部用 KV（F32 数组）存储，不依赖 GGUF 张量。
+# 原因：量化后（Q8_0/Q4_K_M）张量的字节布局不再是纯 float32，
+# 读回来会得到错误的形状和数值。KV 条目始终存 F32，对所有精度都安全。
+print("追加 pooler 和分类头权重到 KV 元数据...")
 writer.add_key_value(
     "bert.classifier.pooler_weight",
     pooler_w,
@@ -118,6 +133,18 @@ writer.add_key_value(
 writer.add_key_value(
     "bert.classifier.pooler_bias",
     pooler_b,
+    gguf.GGUFValueType.ARRAY,
+    sub_type=gguf.GGUFValueType.FLOAT32,
+)
+writer.add_key_value(
+    "bert.classifier.output_weight",
+    cls_w,
+    gguf.GGUFValueType.ARRAY,
+    sub_type=gguf.GGUFValueType.FLOAT32,
+)
+writer.add_key_value(
+    "bert.classifier.output_bias",
+    cls_b,
     gguf.GGUFValueType.ARRAY,
     sub_type=gguf.GGUFValueType.FLOAT32,
 )
