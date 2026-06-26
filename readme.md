@@ -99,7 +99,9 @@ conda run -n <ENV> python train_nlu.py --device cpu --epochs 10 --batch_size 8
 训练完成后可用 HuggingFace 格式直接测试：
 
 ```bash
-conda run -n <ENV> python predict_nlu.py --interactive
+# 交互式脚本需要先激活环境再运行，不能用 conda run（会断开键盘输入）
+conda activate <ENV>
+python predict_nlu.py --interactive
 ```
 
 ---
@@ -166,7 +168,9 @@ conda run -n <ENV> python add_pooler_to_gguf.py
 ## 步骤六：GGUF 推理测试
 
 ```bash
-conda run -n <ENV> python test_gguf.py
+# 交互式脚本需要先激活环境再运行，不能用 conda run（会断开键盘输入）
+conda activate <ENV>
+python test_gguf.py
 ```
 
 测试示例：
