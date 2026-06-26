@@ -1,7 +1,7 @@
 """
 test_gguf.py
 ============
-作用：加载 nlu_model_pooler.gguf，对用户输入的话语做意图分类推理。
+作用：加载含 pooler 层的 GGUF 文件，对用户输入的话语做意图分类推理。
      完全基于 GGUF 文件，不依赖任何 HuggingFace 模型文件。
 
 推理原理：
@@ -11,14 +11,19 @@ test_gguf.py
   4. softmax 得到各意图概率
 
 执行前提：
-  1. 已完成 add_pooler_to_gguf.py，生成了 nlu_model-bert-base-chinese-F32-pooler.gguf
+  1. 已完成 add_pooler_to_gguf.py，生成了 *-pooler.gguf 文件
   2. 已安装 llama-cpp-python：pip install llama-cpp-python
 
 用法：
+  # 默认加载 F32 版本
   python test_gguf.py
+
+  # 指定量化版本
+  python test_gguf.py --model nlu_model-bert-base-chinese-Q8_0-pooler.gguf
 """
 
 import sys
+import argparse
 import numpy as np
 
 # 把 llama.cpp 里的 gguf-py 加到 Python 模块搜索路径
@@ -27,9 +32,18 @@ sys.path.insert(0, "./llama.cpp/gguf-py")
 from llama_cpp import Llama
 from gguf import GGUFReader
 
+# ── 命令行参数 ────────────────────────────────
+parser = argparse.ArgumentParser(description="BERT GGUF 意图分类推理")
+parser.add_argument(
+    "--model", "-m",
+    default="nlu_model-bert-base-chinese-F32-pooler.gguf",
+    help="GGUF 模型文件路径（默认：nlu_model-bert-base-chinese-F32-pooler.gguf）",
+)
+args = parser.parse_args()
+
 # ── 配置 ─────────────────────────────────────
-GGUF_PATH = "nlu_model-bert-base-chinese-F32-pooler.gguf"  # 包含 pooler 权重的 GGUF 文件
-TOP_K     = 3                           # 显示概率最高的前 K 个意图
+GGUF_PATH = args.model   # 包含 pooler 权重的 GGUF 文件
+TOP_K     = 3            # 显示概率最高的前 K 个意图
 
 # ── 读取 GGUF 里的元数据 ──────────────────────
 print(f"读取 GGUF 文件：{GGUF_PATH}")

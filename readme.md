@@ -200,18 +200,16 @@ conda run -n <ENV> python add_pooler_to_gguf.py
 
 ## 步骤六：GGUF 推理测试
 
-`test_gguf.py` 默认加载 `nlu_model-bert-base-chinese-F32-pooler.gguf`，
-如果用的是其他量化版本，修改脚本第 31 行的 `GGUF_PATH` 变量即可：
-
-```python
-GGUF_PATH = "nlu_model-bert-base-chinese-Q8_0-pooler.gguf"
-```
-
-然后运行（交互式脚本需先激活环境，不能用 `conda run`）：
+交互式脚本需先激活环境，不能用 `conda run`：
 
 ```bash
+# 默认加载 F32 版本
 conda activate <ENV>
 python test_gguf.py
+
+# 指定量化版本（用 --model 参数）
+conda activate <ENV>
+python test_gguf.py --model nlu_model-bert-base-chinese-Q8_0-pooler.gguf
 ```
 
 测试示例：
