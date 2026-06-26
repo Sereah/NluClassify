@@ -25,8 +25,8 @@ nlu_classify/
 ├── bert-base-chinese/                         # 需手动克隆（见步骤零）
 ├── nlu_model/                                 # 训练后自动生成（HuggingFace 格式）
 ├── llama.cpp/                                 # 需手动克隆（见步骤三）
-├── nlu_model-bert-base-chinese-F32.gguf       # 转换后生成
-└── nlu_model-bert-base-chinese-F32-pooler.gguf  # 追加 pooler 后生成，用于最终推理
+├── nlu_model-bert-base-chinese-F32.gguf        # 转换后生成（按选择的量化精度命名）
+└── nlu_model-bert-base-chinese-F32-pooler.gguf # 追加 pooler 后生成，用于最终推理
 ```
 
 ---
@@ -136,39 +136,80 @@ conda run -n <ENV> python patch_llama_cpp.py
 再写入 `llama.cpp/conversion/base.py`。无论使用哪个版本的 llama.cpp 都能正确适配。
 成功后会提示 `✅ patch 完成`，同时自动备份原文件为 `base.py.bak`。
 
-**4.2 执行转换**
+**4.2 选择量化精度**
+
+量化会把权重从 float32 压缩为更少位数，减小文件体积、加快加载速度，但会轻微损失精度。
+对意图分类任务影响较小，**移动端部署推荐 Q8_0**。
+
+| 格式 | 文件大小 | 精度影响 | 冷启动速度 | 推荐场景 |
+|------|---------|---------|----------|---------|
+| F32  | 100%（基准）| 无损 | 最慢 | 开发调试、精度对比基准 |
+| F16  | ~50% | 几乎无损（<0.1%） | 快 | 对精度敏感但想省空间 |
+| Q8_0 | ~25% | 基本无损（<0.5%） | 很快 | **移动端部署推荐** |
+| Q4_K_M | ~12% | 轻微下降（1~3%） | 最快 | 极度资源受限的场景 |
+
+**4.3 执行转换**
+
+根据需要选择一种精度执行，文件名自动带上精度后缀方便区分：
 
 ```bash
+# F32（全精度，不量化）
 conda run -n <ENV> python llama.cpp/convert_hf_to_gguf.py \
-    nlu_model \
-    --outtype f32 \
+    nlu_model --outtype f32 \
     --outfile nlu_model-bert-base-chinese-F32.gguf
-```
 
-参数说明：
-- `nlu_model`：训练好的模型目录
-- `--outtype f32`：保持 float32 精度（不量化，保证分类准确率）
-- `--outfile nlu_model-bert-base-chinese-F32.gguf`：文件名包含基础模型名和精度，方便区分
+# F16（半精度，体积减半，精度几乎不变）
+conda run -n <ENV> python llama.cpp/convert_hf_to_gguf.py \
+    nlu_model --outtype f16 \
+    --outfile nlu_model-bert-base-chinese-F16.gguf
+
+# Q8_0（8位量化，推荐）
+conda run -n <ENV> python llama.cpp/convert_hf_to_gguf.py \
+    nlu_model --outtype q8_0 \
+    --outfile nlu_model-bert-base-chinese-Q8_0.gguf
+
+# Q4_K_M（4位量化，体积最小）
+conda run -n <ENV> python llama.cpp/convert_hf_to_gguf.py \
+    nlu_model --outtype q4_k_m \
+    --outfile nlu_model-bert-base-chinese-Q4_K_M.gguf
+```
 
 ---
 
 ## 步骤五：追加 pooler 层
 
-llama.cpp 转换时会漏掉 pooler 层，需手动补回：
+llama.cpp 转换时会漏掉 pooler 层，需手动补回。用 `--input` 指定上一步生成的 GGUF 文件，
+输出文件名自动在末尾加 `-pooler`（也可用 `--output` 手动指定）：
 
 ```bash
+# F32
+conda run -n <ENV> python add_pooler_to_gguf.py \
+    --input nlu_model-bert-base-chinese-F32.gguf
+
+# Q8_0（推荐）
+conda run -n <ENV> python add_pooler_to_gguf.py \
+    --input nlu_model-bert-base-chinese-Q8_0.gguf
+
+# 不传参数时默认处理 F32 文件（向后兼容）
 conda run -n <ENV> python add_pooler_to_gguf.py
 ```
 
-输入：`nlu_model-bert-base-chinese-F32.gguf` + `nlu_model/model.safetensors`  
-输出：`nlu_model-bert-base-chinese-F32-pooler.gguf`
+输出文件示例：`nlu_model-bert-base-chinese-Q8_0-pooler.gguf`
 
 ---
 
 ## 步骤六：GGUF 推理测试
 
+`test_gguf.py` 默认加载 `nlu_model-bert-base-chinese-F32-pooler.gguf`，
+如果用的是其他量化版本，修改脚本第 31 行的 `GGUF_PATH` 变量即可：
+
+```python
+GGUF_PATH = "nlu_model-bert-base-chinese-Q8_0-pooler.gguf"
+```
+
+然后运行（交互式脚本需先激活环境，不能用 `conda run`）：
+
 ```bash
-# 交互式脚本需要先激活环境再运行，不能用 conda run（会断开键盘输入）
 conda activate <ENV>
 python test_gguf.py
 ```
@@ -222,13 +263,14 @@ cd ..
 ```
 训练数据 (training_data/*.csv)
     ↓
-python train_nlu.py              → nlu_model/（HuggingFace 格式）
+python train_nlu.py                    → nlu_model/（HuggingFace 格式）
     ↓
-python predict_nlu.py            → 直接测试（开发阶段用）
+python predict_nlu.py                  → 直接测试（开发阶段用）
     ↓
-python llama.cpp/convert_hf_to_gguf.py  → nlu_model-bert-base-chinese-F32.gguf
+python llama.cpp/convert_hf_to_gguf.py → nlu_model-bert-base-chinese-{精度}.gguf
+    （选择 f32 / f16 / q8_0 / q4_k_m）
     ↓
-python add_pooler_to_gguf.py     → nlu_model-bert-base-chinese-F32-pooler.gguf
+python add_pooler_to_gguf.py --input … → nlu_model-bert-base-chinese-{精度}-pooler.gguf
     ↓
-python test_gguf.py              → GGUF 推理测试（部署阶段用）
+python test_gguf.py                    → GGUF 推理测试（部署阶段用）
 ```

@@ -11,17 +11,27 @@ add_pooler_to_gguf.py
 
 执行前提：
   1. 已完成训练，nlu_model/ 目录存在
-  2. 已执行 convert_hf_to_gguf.py，生成了 nlu_model.gguf
+  2. 已执行 convert_hf_to_gguf.py，生成了对应精度的 GGUF
   3. llama.cpp 已克隆到 ./llama.cpp/
 
 用法：
+  # 默认处理 F32 文件
   python add_pooler_to_gguf.py
 
-输入：nlu_model-bert-base-chinese-F32.gguf + nlu_model/model.safetensors
-输出：nlu_model-bert-base-chinese-F32-pooler.gguf
+  # 指定输入文件（量化版本）
+  python add_pooler_to_gguf.py --input nlu_model-bert-base-chinese-Q8_0.gguf
+
+  # 同时指定输入和输出
+  python add_pooler_to_gguf.py \
+      --input  nlu_model-bert-base-chinese-Q8_0.gguf \
+      --output nlu_model-bert-base-chinese-Q8_0-pooler.gguf
+
+输出文件名规则（不指定 --output 时）：
+  xxx.gguf → xxx-pooler.gguf
 """
 
 import sys
+import argparse
 import numpy as np
 
 # 把 llama.cpp 里的 gguf-py 加到 Python 模块搜索路径
@@ -32,10 +42,36 @@ import gguf
 from gguf import GGUFReader, GGUFWriter, GGMLQuantizationType
 from safetensors.torch import load_file
 
+# ── 命令行参数 ────────────────────────────────
+parser = argparse.ArgumentParser(description="向 GGUF 文件追加 BERT pooler 层权重")
+parser.add_argument(
+    "--input", "-i",
+    default="nlu_model-bert-base-chinese-F32.gguf",
+    help="输入 GGUF 文件路径（默认：nlu_model-bert-base-chinese-F32.gguf）",
+)
+parser.add_argument(
+    "--output", "-o",
+    default=None,
+    help="输出 GGUF 文件路径（默认：在输入文件名末尾加 -pooler，如 Q8_0.gguf → Q8_0-pooler.gguf）",
+)
+parser.add_argument(
+    "--hf-model",
+    default="nlu_model/model.safetensors",
+    help="HuggingFace 格式权重文件路径（默认：nlu_model/model.safetensors）",
+)
+args = parser.parse_args()
+
 # ── 文件路径配置 ──────────────────────────────
-INPUT_GGUF  = "nlu_model-bert-base-chinese-F32.gguf"         # convert_hf_to_gguf.py 生成的原始 GGUF
-OUTPUT_GGUF = "nlu_model-bert-base-chinese-F32-pooler.gguf"  # 追加 pooler 权重后的新 GGUF
-HF_MODEL    = "nlu_model/model.safetensors"                   # 训练后 HuggingFace 格式的权重文件
+INPUT_GGUF = args.input
+HF_MODEL   = args.hf_model
+
+# 未指定输出时自动推导：在 .gguf 后缀前插入 -pooler
+if args.output:
+    OUTPUT_GGUF = args.output
+elif INPUT_GGUF.endswith(".gguf"):
+    OUTPUT_GGUF = INPUT_GGUF[:-5] + "-pooler.gguf"
+else:
+    OUTPUT_GGUF = INPUT_GGUF + "-pooler.gguf"
 
 print(f"读取 HuggingFace 模型权重：{HF_MODEL}")
 # load_file 读取 safetensors 格式的权重文件（比 .bin 格式更安全、更快）
