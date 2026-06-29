@@ -59,7 +59,7 @@ def compute_hash(chktxt: str, tokenizer) -> str:
     用本地 tokenizer 对 chktxt 编码后求 SHA256，
     完全复现 base.py 里 get_vocab_base_pre() 的计算过程。
     """
-    chktok = tokenizer.encode(chktxt)
+    chktok = tokenizer.encode(chktxt, add_special_tokens=False)
     chkhsh = sha256(str(chktok).encode()).hexdigest()
     return chkhsh
 
