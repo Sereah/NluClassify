@@ -8,6 +8,7 @@
 
 ```
 nlu_classify/
+├── setup_env.sh                               # 环境检查与自动安装脚本（首次使用先运行）
 ├── train_nlu.py                               # 训练脚本
 ├── predict_nlu.py                             # HuggingFace 格式推理
 ├── add_pooler_to_gguf.py                      # 追加 pooler 层到 GGUF
@@ -51,27 +52,16 @@ git clone https://www.modelscope.cn/google-bert/bert-base-chinese.git
 
 ## 步骤一：准备 conda 环境
 
-所有 Python 命令都需要在 conda 环境中执行。以下文档用 `<ENV>` 代替环境名，
-**请将 `<ENV>` 替换成你自己的环境名**。
-
-**如果已有现成环境**（里面有 torch、transformers），直接在里面安装缺少的包：
+在 conda 环境中运行环境检查脚本，脚本会自动检测依赖版本，缺失或版本不符时提示你确认后安装：
 
 ```bash
-conda activate <ENV>
-pip install llama-cpp-python safetensors openpyxl
+conda activate <ENV>   # 替换为你自己的环境名，没有的话先 conda create -n <ENV> python=3.10
+bash setup_env.sh
 ```
 
-**如果从零新建环境**：
+脚本会检查 `torch`、`transformers`、`numpy`、`pandas`、`scikit-learn`、`accelerate`、`tokenizers` 的版本，并在需要时引导你完成安装。
 
-```bash
-# 创建新环境（Python 3.10）
-conda create -n <ENV> python=3.10 -y
-conda activate <ENV>
-
-# 安装依赖
-pip install torch transformers scikit-learn pandas openpyxl
-pip install llama-cpp-python safetensors
-```
+> **后续所有步骤均在同一 conda 环境中执行，不再重复写激活命令。**
 
 ---
 
@@ -81,13 +71,13 @@ pip install llama-cpp-python safetensors
 
 ```bash
 # CPU 训练（自己电脑，速度慢但能跑）
-conda run -n <ENV> python train_nlu.py --device cpu
+python train_nlu.py --device cpu
 
 # GPU 训练（服务器，推荐）
-conda run -n <ENV> python train_nlu.py --device cuda
+python train_nlu.py --device cuda
 
 # 自定义参数（CPU 时适当减小 batch_size 加快速度）
-conda run -n <ENV> python train_nlu.py --device cpu --epochs 10 --batch_size 8
+python train_nlu.py --device cpu --epochs 10 --batch_size 8
 ```
 
 训练完成后，`nlu_model/` 目录会自动生成，包含：
@@ -99,8 +89,6 @@ conda run -n <ENV> python train_nlu.py --device cpu --epochs 10 --batch_size 8
 训练完成后可用 HuggingFace 格式直接测试：
 
 ```bash
-# 交互式脚本需要先激活环境再运行，不能用 conda run（会断开键盘输入）
-conda activate <ENV>
 python predict_nlu.py --interactive
 ```
 
@@ -129,7 +117,7 @@ git clone https://github.com/ggerganov/llama.cpp.git
 llama.cpp 的转换脚本不认识 bert-base-chinese 的分词器，需要先修复：
 
 ```bash
-conda run -n <ENV> python patch_llama_cpp.py
+python patch_llama_cpp.py
 ```
 
 脚本会自动从本地 `bert-base-chinese/` 加载 tokenizer 并动态计算哈希值，
@@ -154,22 +142,22 @@ conda run -n <ENV> python patch_llama_cpp.py
 
 ```bash
 # F32（全精度，不量化）
-conda run -n <ENV> python llama.cpp/convert_hf_to_gguf.py \
+python llama.cpp/convert_hf_to_gguf.py \
     nlu_model --outtype f32 \
     --outfile nlu_model-bert-base-chinese-F32.gguf
 
 # F16（半精度，体积减半，精度几乎不变）
-conda run -n <ENV> python llama.cpp/convert_hf_to_gguf.py \
+python llama.cpp/convert_hf_to_gguf.py \
     nlu_model --outtype f16 \
     --outfile nlu_model-bert-base-chinese-F16.gguf
 
 # Q8_0（8位量化，推荐）
-conda run -n <ENV> python llama.cpp/convert_hf_to_gguf.py \
+python llama.cpp/convert_hf_to_gguf.py \
     nlu_model --outtype q8_0 \
     --outfile nlu_model-bert-base-chinese-Q8_0.gguf
 
 # Q4_K_M（4位量化，体积最小）
-conda run -n <ENV> python llama.cpp/convert_hf_to_gguf.py \
+python llama.cpp/convert_hf_to_gguf.py \
     nlu_model --outtype q4_k_m \
     --outfile nlu_model-bert-base-chinese-Q4_K_M.gguf
 ```
@@ -183,15 +171,15 @@ llama.cpp 转换时会漏掉 pooler 层，需手动补回。用 `--input` 指定
 
 ```bash
 # F32
-conda run -n <ENV> python add_pooler_to_gguf.py \
+python add_pooler_to_gguf.py \
     --input nlu_model-bert-base-chinese-F32.gguf
 
 # Q8_0（推荐）
-conda run -n <ENV> python add_pooler_to_gguf.py \
+python add_pooler_to_gguf.py \
     --input nlu_model-bert-base-chinese-Q8_0.gguf
 
 # 不传参数时默认处理 F32 文件（向后兼容）
-conda run -n <ENV> python add_pooler_to_gguf.py
+python add_pooler_to_gguf.py
 ```
 
 输出文件示例：`nlu_model-bert-base-chinese-Q8_0-pooler.gguf`
@@ -204,11 +192,9 @@ conda run -n <ENV> python add_pooler_to_gguf.py
 
 ```bash
 # 默认加载 F32 版本
-conda activate <ENV>
 python test_gguf.py
 
 # 指定量化版本（用 --model 参数）
-conda activate <ENV>
 python test_gguf.py --model nlu_model-bert-base-chinese-Q8_0-pooler.gguf
 ```
 
