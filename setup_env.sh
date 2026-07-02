@@ -57,7 +57,7 @@ exit(0 if a<b else 1)" 2>/dev/null
 }
 
 get_installed() {
-    pip show "$1" 2>/dev/null | grep "^Version:" | awk '{print $2}'
+    pip show "$1" 2>/dev/null | grep "^Version:" | awk '{print $2}' || true
 }
 
 echo ""
