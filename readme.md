@@ -26,11 +26,11 @@ nlu_classify/
 │   └── 搜索.csv
 ├── bert-base-chinese/                         # 需手动克隆（见步骤零）
 ├── nlu_model/                                 # 训练后自动生成（HuggingFace 格式）
-├── nlu_model_onnx/                            # ONNX 转换后生成（见步骤七）
+├── nlu_model_onnx/                            # ONNX 转换后生成（见路径 B）
 │   ├── nlu_model.onnx                         #   FP32 原始导出（409 MB，备份）
 │   ├── nlu_model_quant.onnx                   #   INT8 量化（103 MB）
 │   └── nlu_model_mobile.onnx                  #   ★ 量化 + tokenizer + 后处理，Android 直接加载
-├── llama.cpp/                                 # 需手动克隆（见步骤三）
+├── llama.cpp/                                 # 需手动克隆（见路径 A）
 ├── nlu_model-bert-base-chinese-F32.gguf        # 转换后生成（按选择的量化精度命名）
 └── nlu_model-bert-base-chinese-F32-pooler.gguf # 追加 pooler 后生成，用于最终推理
 ```
@@ -99,7 +99,20 @@ python predict_nlu.py --interactive
 
 ---
 
-## 步骤三：克隆 llama.cpp
+## 推理部署（二选一）
+
+训练完成后，根据需要从以下两条路径中**任选其一**：
+
+| 方式 | 适用场景 | 推理引擎 |
+|------|---------|---------|
+| 路径 A：GGUF | x86 服务器、桌面端、嵌入式设备 | llama.cpp |
+| 路径 B：ONNX | Android 移动端 | ONNX Runtime |
+
+---
+
+### 路径 A：GGUF / llama.cpp
+
+#### 步骤 A1：克隆 llama.cpp
 
 将 llama.cpp 克隆到 `nlu_classify/` 目录内：
 
@@ -113,11 +126,9 @@ git clone https://github.com/ggerganov/llama.cpp.git
 
 > **注意**：转换 GGUF 只需要克隆，不需要编译 C++ 代码。
 
----
+#### 步骤 A2：转换 GGUF
 
-## 步骤四：转换 GGUF
-
-**4.1 先打补丁（只需执行一次）**
+**A2.1 先打补丁（只需执行一次）**
 
 llama.cpp 的转换脚本不认识 bert-base-chinese 的分词器，需要先修复：
 
@@ -129,7 +140,7 @@ python patch_llama_cpp.py
 再写入 `llama.cpp/conversion/base.py`。无论使用哪个版本的 llama.cpp 都能正确适配。
 成功后会提示 `✅ patch 完成`，同时自动备份原文件为 `base.py.bak`。
 
-**4.2 选择量化精度**
+**A2.2 选择量化精度**
 
 量化会把权重从 float32 压缩为更少位数，减小文件体积、加快加载速度，但会轻微损失精度。
 对意图分类任务影响较小，**移动端部署推荐 Q8_0**。
@@ -141,7 +152,7 @@ python patch_llama_cpp.py
 | Q8_0 | ~25% | 基本无损（<0.5%） | 很快 | **移动端部署推荐** |
 | Q4_K_M | ~12% | 轻微下降（1~3%） | 最快 | 极度资源受限的场景 |
 
-**4.3 执行转换**
+**A2.3 执行转换**
 
 根据需要选择一种精度执行，文件名自动带上精度后缀方便区分：
 
@@ -167,9 +178,7 @@ python llama.cpp/convert_hf_to_gguf.py \
     --outfile nlu_model-bert-base-chinese-Q4_K_M.gguf
 ```
 
----
-
-## 步骤五：追加 pooler 层
+#### 步骤 A3：追加 pooler 层
 
 llama.cpp 转换时会漏掉 pooler 层，需手动补回。用 `--input` 指定上一步生成的 GGUF 文件，
 输出文件名自动在末尾加 `-pooler`（也可用 `--output` 手动指定）：
@@ -189,9 +198,7 @@ python add_pooler_to_gguf.py
 
 输出文件示例：`nlu_model-bert-base-chinese-Q8_0-pooler.gguf`
 
----
-
-## 步骤六：GGUF 推理测试
+#### 步骤 A4：GGUF 推理测试
 
 交互式脚本需先激活环境，不能用 `conda run`：
 
@@ -213,9 +220,7 @@ python test_gguf.py --model nlu_model-bert-base-chinese-Q8_0-pooler.gguf
     3. 闲聊           0.9%
 ```
 
----
-
-## 附：x86 编译 llama.cpp（可选）
+#### 附：x86 编译 llama.cpp（可选）
 
 如果将来需要使用 llama.cpp 的 C++ 原生工具（如 `llama-cli` 命令行推理），才需要编译。纯 Python 工作流不需要这一步。
 
@@ -247,7 +252,7 @@ cd ..
 
 ---
 
-## 步骤七：导出 ONNX（Android 移动端部署）
+### 路径 B：ONNX（Android 移动端部署）
 
 如果你需要在 Android 应用中使用 ONNX Runtime 进行推理（而非 llama.cpp），
 可直接从训练好的 `nlu_model/` 一键导出 ONNX 模型，包含量化、tokenizer 和后处理。
@@ -271,7 +276,7 @@ python convert_to_onnx.py
 session.run("input_text", "打开空调")  // → index = 4 → "直接车控"
 ```
 
-> **注意**：`convert_to_onnx.py` 不依赖 llama.cpp，无需先执行步骤三/四/五。从 `nlu_model/` 直接导出即可。
+> **注意**：`convert_to_onnx.py` 不依赖 llama.cpp，无需先执行路径 A 的步骤。从 `nlu_model/` 直接导出即可。
 > 导出需要额外依赖：`onnxruntime`、`onnx`、`onnxruntime-extensions`、`onnxscript`，`setup_env.sh` 已包含这些检查。
 
 ---
@@ -285,7 +290,7 @@ python train_nlu.py                    → nlu_model/（HuggingFace 格式）
     ↓
     ├─ python predict_nlu.py           → 直接测试（开发阶段用）
     │
-    ├─ [GGUF / llama.cpp 路径] ──────────────────────┐
+    ├─ [路径 A：GGUF / llama.cpp] ────────────────────┐
     │                                                    │
     │   python llama.cpp/convert_hf_to_gguf.py           │
     │       → nlu_model-bert-base-chinese-{精度}.gguf    │
@@ -293,7 +298,7 @@ python train_nlu.py                    → nlu_model/（HuggingFace 格式）
     │       → nlu_model-bert-base-chinese-{精度}-pooler.gguf │
     │   python test_gguf.py             → GGUF 推理测试  │
     │                                                    │
-    └─ [ONNX / Android 路径] ───────────────────────────┘
+    └─ [路径 B：ONNX / Android] ────────────────────────┘
                                                         │
         python convert_to_onnx.py      → nlu_model_onnx/
             nlu_model_mobile.onnx      → Android 直接加载
