@@ -19,6 +19,10 @@ declare -A MIN_VER=(
     [scikit-learn]="1.2.0"
     [accelerate]="0.20.0"
     [tokenizers]="0.13.0"
+    [onnxruntime]="1.17.0"
+    [onnx]="1.16.0"
+    [onnxruntime-extensions]="0.13.0"
+    [onnxscript]="0.1.0"
 )
 
 declare -A MAX_VER=(
@@ -29,9 +33,13 @@ declare -A MAX_VER=(
     [scikit-learn]="2.0.0"
     [accelerate]="2.0.0"
     [tokenizers]="1.0.0"
+    [onnxruntime]="2.0.0"
+    [onnx]="2.0.0"
+    [onnxruntime-extensions]="1.0.0"
+    [onnxscript]="1.0.0"
 )
 
-PKGS_ORDER=(torch transformers numpy pandas scikit-learn accelerate tokenizers)
+PKGS_ORDER=(torch transformers numpy pandas scikit-learn accelerate tokenizers onnxruntime onnx onnxruntime-extensions onnxscript)
 
 # ── 版本比较 ───────────────────────────────────────────────
 version_ge() {
@@ -212,6 +220,32 @@ print('OK')
             tokenizers)
                 probe_pkg "tokenizers" "
 import tokenizers
+print('OK')
+" "导入正常"
+                ;;
+            onnxruntime)
+                probe_pkg "onnxruntime" "
+import onnxruntime as ort
+_ = ort.InferenceSession
+print('OK')
+" "InferenceSession 可用"
+                ;;
+            onnx)
+                probe_pkg "onnx" "
+import onnx
+_ = onnx.load
+print('OK')
+" "导入正常"
+                ;;
+            onnxruntime-extensions)
+                probe_pkg "onnxruntime-extensions" "
+from onnxruntime_extensions.tools import add_pre_post_processing_to_model as add_ppp
+print('OK')
+" "add_pre_post_processing_to_model 可用"
+                ;;
+            onnxscript)
+                probe_pkg "onnxscript" "
+import onnxscript
 print('OK')
 " "导入正常"
                 ;;

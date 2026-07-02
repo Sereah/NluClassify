@@ -11,6 +11,7 @@ nlu_classify/
 ├── setup_env.sh                               # 环境检查与自动安装脚本（首次使用先运行）
 ├── train_nlu.py                               # 训练脚本
 ├── predict_nlu.py                             # HuggingFace 格式推理
+├── convert_to_onnx.py                         # HuggingFace → ONNX + 量化 + 移动端适配
 ├── add_pooler_to_gguf.py                      # 追加 pooler 层到 GGUF
 ├── test_gguf.py                               # GGUF 格式推理测试
 ├── patch_llama_cpp.py                         # 修复 llama.cpp 分词器识别问题
@@ -25,6 +26,10 @@ nlu_classify/
 │   └── 搜索.csv
 ├── bert-base-chinese/                         # 需手动克隆（见步骤零）
 ├── nlu_model/                                 # 训练后自动生成（HuggingFace 格式）
+├── nlu_model_onnx/                            # ONNX 转换后生成（见步骤七）
+│   ├── nlu_model.onnx                         #   FP32 原始导出（409 MB，备份）
+│   ├── nlu_model_quant.onnx                   #   INT8 量化（103 MB）
+│   └── nlu_model_mobile.onnx                  #   ★ 量化 + tokenizer + 后处理，Android 直接加载
 ├── llama.cpp/                                 # 需手动克隆（见步骤三）
 ├── nlu_model-bert-base-chinese-F32.gguf        # 转换后生成（按选择的量化精度命名）
 └── nlu_model-bert-base-chinese-F32-pooler.gguf # 追加 pooler 后生成，用于最终推理
@@ -242,6 +247,35 @@ cd ..
 
 ---
 
+## 步骤七：导出 ONNX（Android 移动端部署）
+
+如果你需要在 Android 应用中使用 ONNX Runtime 进行推理（而非 llama.cpp），
+可直接从训练好的 `nlu_model/` 一键导出 ONNX 模型，包含量化、tokenizer 和后处理。
+
+```bash
+python convert_to_onnx.py
+```
+
+脚本分三步执行：
+
+| 步骤 | 操作 | 产出 | 说明 |
+|------|------|------|------|
+| 1 | HuggingFace → ONNX | `nlu_model.onnx` | FP32 原始导出，409 MB |
+| 2 | INT8 动态量化 | `nlu_model_quant.onnx` | 权重 INT8，103 MB（-75%） |
+| 3 | 集成 pre/post processing | `nlu_model_mobile.onnx` | 量化 + BertTokenizer + argmax + label 映射 |
+
+最终产物 `nlu_model_mobile.onnx` 内置了 tokenizer，在 Android 端只需一行调用：
+
+```kotlin
+// 输入纯文本，输出分类索引
+session.run("input_text", "打开空调")  // → index = 4 → "直接车控"
+```
+
+> **注意**：`convert_to_onnx.py` 不依赖 llama.cpp，无需先执行步骤三/四/五。从 `nlu_model/` 直接导出即可。
+> 导出需要额外依赖：`onnxruntime`、`onnx`、`onnxruntime-extensions`、`onnxscript`，`setup_env.sh` 已包含这些检查。
+
+---
+
 ## 完整流程一览
 
 ```
@@ -249,12 +283,18 @@ cd ..
     ↓
 python train_nlu.py                    → nlu_model/（HuggingFace 格式）
     ↓
-python predict_nlu.py                  → 直接测试（开发阶段用）
-    ↓
-python llama.cpp/convert_hf_to_gguf.py → nlu_model-bert-base-chinese-{精度}.gguf
-    （选择 f32 / f16 / q8_0 / q4_k_m）
-    ↓
-python add_pooler_to_gguf.py --input … → nlu_model-bert-base-chinese-{精度}-pooler.gguf
-    ↓
-python test_gguf.py                    → GGUF 推理测试（部署阶段用）
+    ├─ python predict_nlu.py           → 直接测试（开发阶段用）
+    │
+    ├─ [GGUF / llama.cpp 路径] ──────────────────────┐
+    │                                                    │
+    │   python llama.cpp/convert_hf_to_gguf.py           │
+    │       → nlu_model-bert-base-chinese-{精度}.gguf    │
+    │   python add_pooler_to_gguf.py --input …           │
+    │       → nlu_model-bert-base-chinese-{精度}-pooler.gguf │
+    │   python test_gguf.py             → GGUF 推理测试  │
+    │                                                    │
+    └─ [ONNX / Android 路径] ───────────────────────────┘
+                                                        │
+        python convert_to_onnx.py      → nlu_model_onnx/
+            nlu_model_mobile.onnx      → Android 直接加载
 ```
